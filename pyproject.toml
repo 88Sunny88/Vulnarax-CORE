@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vulnarax-core"
+version = "0.1.0"
+description = "Open-source CLI vulnerability scanner"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "click",
+    "requests",
+    "rich"
+]
+
+[project.scripts]
+vulnaraX = "vulnaraX.cli:main"
