@@ -1,70 +1,123 @@
 {
-  "image": "alpine:3.18",
+  "image": "ubuntu:20.04",
   "vulnerabilities": [
     {
-      "id": "CVE-2023-42363",
-      "package": "busybox",
-      "version": "1.36.1-r7",
+      "id": "UBUNTU-CVE-2016-2781",
+      "package": "coreutils",
+      "version": "8.30-3ubuntu2",
       "severity": [
         {
           "type": "CVSS_V3",
-          "score": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H"
+          "score": "CVSS:3.0/AV:L/AC:L/PR:L/UI:N/S:C/C:N/I:H/A:N"
+        },
+        {
+          "type": "CVSS_V3",
+          "score": "CVSS:3.1/AV:L/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N"
+        },
+        {
+          "score": "low"
         }
       ],
       "description": "",
-      "fixed_version": "1.35.0-r31",
-      "instructions": "apk upgrade busybox"
+      "fixed_version": null,
+      "instructions": "apt-get install --only-upgrade coreutils",
+      "_display_severity": "HIGH"
     },
     {
-      "id": "CVE-2023-42364",
-      "package": "busybox",
-      "version": "1.36.1-r7",
+      "id": "UBUNTU-CVE-2025-5278",
+      "package": "coreutils",
+      "version": "8.30-3ubuntu2",
       "severity": [
         {
           "type": "CVSS_V3",
-          "score": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H"
+          "score": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:L"
+        },
+        {
+          "score": "low"
         }
       ],
       "description": "",
-      "fixed_version": "1.35.0-r31",
-      "instructions": "apk upgrade busybox"
+      "fixed_version": null,
+      "instructions": "apt-get install --only-upgrade coreutils",
+      "_display_severity": "HIGH"
     },
     {
-      "id": "CVE-2023-42365",
-      "package": "busybox",
-      "version": "1.36.1-r7",
+      "id": "UBUNTU-CVE-2025-6297",
+      "package": "dpkg",
+      "version": "1.19.7ubuntu3.2",
       "severity": [
         {
           "type": "CVSS_V3",
-          "score": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H"
+          "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
+        },
+        {
+          "score": "low"
         }
       ],
       "description": "",
-      "fixed_version": "1.35.0-r31",
-      "instructions": "apk upgrade busybox"
+      "fixed_version": null,
+      "instructions": "apt-get install --only-upgrade dpkg",
+      "_display_severity": "HIGH"
     },
     {
-      "id": "CVE-2023-42366",
-      "package": "busybox",
-      "version": "1.36.1-r7",
+      "id": "UBUNTU-CVE-2024-2236",
+      "package": "libgcrypt20",
+      "version": "1.8.5-5ubuntu1.1",
       "severity": [
         {
           "type": "CVSS_V3",
-          "score": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H"
+          "score": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N"
+        },
+        {
+          "score": "low"
         }
       ],
       "description": "",
-      "fixed_version": "1.35.0-r18",
-      "instructions": "apk upgrade busybox"
+      "fixed_version": null,
+      "instructions": "apt-get install --only-upgrade libgcrypt20",
+      "_display_severity": "HIGH"
     },
     {
-      "id": "CVE-2025-26519",
-      "package": "musl",
-      "version": "1.2.4-r3",
-      "severity": "UNKNOWN",
+      "id": "UBUNTU-CVE-2021-46848",
+      "package": "libtasn1-6",
+      "version": "4.16.0-2ubuntu0.1",
+      "severity": [
+        {
+          "type": "CVSS_V3",
+          "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:H"
+        },
+        {
+          "type": "CVSS_V3",
+          "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:H"
+        },
+        {
+          "type": "Ubuntu",
+          "score": "low"
+        }
+      ],
       "description": "",
-      "fixed_version": "1.2.3-r4",
-      "instructions": "apk upgrade musl"
+      "fixed_version": null,
+      "instructions": "apt-get install --only-upgrade libtasn1-6",
+      "_display_severity": "HIGH"
+    },
+    {
+      "id": "UBUNTU-CVE-2025-45582",
+      "package": "tar",
+      "version": "1.30+dfsg-7ubuntu0.20.04.4",
+      "severity": [
+        {
+          "type": "CVSS_V3",
+          "score": "CVSS:3.1/AV:L/AC:H/PR:N/UI:R/S:C/C:N/I:L/A:L"
+        },
+        {
+          "type": "Ubuntu",
+          "score": "medium"
+        }
+      ],
+      "description": "",
+      "fixed_version": null,
+      "instructions": "apt-get install --only-upgrade tar",
+      "_display_severity": "HIGH"
     }
   ]
 }
