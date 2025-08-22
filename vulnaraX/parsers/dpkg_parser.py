@@ -1,0 +1,1 @@
+# Debian/Ubuntu dpkg status parser
