@@ -9,7 +9,9 @@ from cyclonedx.model.bom import Bom
 from cyclonedx.model.vulnerability import Vulnerability, VulnerabilityRating, VulnerabilitySeverity
 from cyclonedx.output.json import JsonV1Dot5
 
-from .osv_client import query_osv
+from vulnaraX.sources.nvd_client import query_nvd
+
+from .sources.osv_client import query_osv
 
 
 def _export_image_fs(image_name: str) -> str:
@@ -207,8 +209,34 @@ def _parse_nodejs_packages(rootfs: str):
     return packages
 
 
+def _normalize_severity(v):
+    """
+    Normalize OSV/NVD severity into CRITICAL/HIGH/MEDIUM/LOW/UNKNOWN.
+    """
+    sev = str(v.get("severity", "")).upper()
+
+    if sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+        return sev
+
+    if "CVSS" in sev:
+        if "AV:N" in sev and "C:H" in sev:
+            return "CRITICAL"
+        return "HIGH"
+
+    # Fallback for common labels
+    if "LOW" in sev:
+        return "LOW"
+    if "MEDIUM" in sev:
+        return "MEDIUM"
+    if "HIGH" in sev:
+        return "HIGH"
+
+    return "UNKNOWN"
+
+
 def scan_image(image_name: str):
     rootfs = None
+    vulnerabilities = []
     try:
         print(f"[*] Exporting filesystem from Docker image: {image_name}")
         rootfs = _export_image_fs(image_name)
@@ -229,45 +257,44 @@ def scan_image(image_name: str):
         for pkg in py_packages:
             vulns = query_osv(pkg["name"], pkg.get("version", "PyPI"))
             for v in vulns:
-                vuln_entry = {
+                vulnerabilities.append({
                     "id": v.get("id"),
                     "package": pkg["name"],
                     "version": pkg["version"],
                     "_ecosystem": "PyPI",
-                    "_display_severity": _get_severity_from_osv(v),
+                    "severity": _normalize_severity(v),
                     "fixed_version": v.get("fixed_version"),
                     "instructions": f"pip install --upgrade {pkg['name']}"
-                }
-                vulnerabilities.append(vuln_entry)
+                })
 
         node_packages = _parse_nodejs_packages(rootfs)
         for pkg in node_packages:
             vulns = query_osv(pkg["name"], pkg.get("version", "npm"))
             for v in vulns:
-                vuln_entry = {
+                vulnerabilities.append({
                     "id": v.get("id"),
                     "package": pkg["name"],
                     "version": pkg["version"],
                     "_ecosystem": "npm",
-                    "_display_severity": _get_severity_from_osv(v),
+                    "severity": _normalize_severity(v),
                     "fixed_version": v.get("fixed_version"),
                     "instructions": f"npm install {pkg['name']}@latest"
-                }
-                vulnerabilities.append(vuln_entry)
+                })
 
         all_packages = pkgs + py_deps + node_deps
-
-        vulnerabilities = []
         for pkg in all_packages:
             pkg_name = pkg["package"]
             pkg_version = pkg.get("version", "latest")
-            vulns = query_osv(pkg_name, pkg_version)
-            for v in vulns:
+
+            osv_results = query_osv(pkg_name, pkg_version)
+            nvd_results = query_nvd(pkg_name, pkg_version)
+
+            for v in osv_results + nvd_results:
                 vuln_entry = {
                     "id": v.get("id"),
                     "package": pkg_name,
                     "version": pkg_version,
-                    "severity": v.get("severity", "UNKNOWN"),
+                    "severity": _normalize_severity(v),
                     "description": v.get("summary", ""),
                     "fixed_version": v.get("fixed_version"),
                 }
@@ -276,14 +303,21 @@ def scan_image(image_name: str):
                         vuln_entry["instructions"] = f"apt-get install --only-upgrade {pkg_name}"
                     else:
                         vuln_entry["instructions"] = f"apk upgrade {pkg_name}"
-                else:  # language package
-                    if pkg in py_deps:
-                        vuln_entry["instructions"] = f"pip install --upgrade {pkg_name}"
-                    else:
-                        vuln_entry["instructions"] = f"npm install {pkg_name}@latest"
+                elif pkg in py_deps:
+                    vuln_entry["instructions"] = f"pip install --upgrade {pkg_name}"
+                else:
+                    vuln_entry["instructions"] = f"npm install {pkg_name}@latest"
                 vulnerabilities.append(vuln_entry)
 
-        return {"image": image_name, "vulnerabilities": vulnerabilities}
+        seen = set()
+        unique_vulns = []
+        for v in vulnerabilities:
+            key = (v["id"], v["package"], v["version"])
+            if key not in seen:
+                seen.add(key)
+                unique_vulns.append(v)
+
+        return {"image": image_name, "vulnerabilities": unique_vulns}
 
     finally:
         if rootfs:
