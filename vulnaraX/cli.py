@@ -8,6 +8,7 @@ from .scanner import generate_sbom
 
 console = Console()
 
+VERSION = "0.2.0"
 
 def _get_highest_severity(severity_list):
     """
@@ -30,6 +31,7 @@ def _get_highest_severity(severity_list):
 
 
 @click.group()
+@click.version_option(VERSION, "--version", "-v", message="VulnaraX %(version)s")
 def main():
     """VulnaraX CLI - Container vulnerability scanner"""
     pass
@@ -38,10 +40,12 @@ def main():
 @main.command()
 @click.argument("image")
 @click.option("--output", default=None, help="Output file for JSON report")
+@click.option("--json-only", is_flag=True, help="Print only JSON output (no table)")
 @click.option("--only-high", is_flag=True, help="Show only HIGH/CRITICAL vulnerabilities")
 @click.option("--top", type=int, default=None, help="Show top N vulnerabilities by severity")
 @click.option("--sbom", default=None, help="Generate CycloneDX SBOM JSON file")
-def scan(image, output, only_high, top, sbom):
+@click.option("--fail-on-high", is_flag=True, help="Exit with code 1 if HIGH/CRITICAL vulns found")
+def scan(image, output, json_only, only_high, top, sbom, fail_on_high):
     """Scan a Docker IMAGE for vulnerabilities."""
     console.print(f"[bold cyan]Scanning image:[/bold cyan] {image} ...")
     results = scan_image(image)
