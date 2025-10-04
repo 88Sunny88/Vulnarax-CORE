@@ -1,0 +1,62 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.4",
+  "serialNumber": "urn:uuid:992c9d6d-0e6b-48f1-9e60-9d5296d73613",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2025-10-04T09:45:47.250875+00:00",
+    "tools": [
+      {
+        "vendor": "VulnaraX",
+        "name": "VulnaraX-Core",
+        "version": "1.0.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "name": "vulnarax-core",
+      "version": "1.0.0"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "fastapi",
+      "version": "0.104.1",
+      "purl": "pkg:pypi/fastapi@0.104.1",
+      "scope": "required",
+      "supplier": {
+        "name": "Sebastian Ramirez"
+      },
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://pypi.org/project/fastapi/0.104.1/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pydantic",
+      "version": "2.5.0",
+      "purl": "pkg:pypi/pydantic@2.5.0",
+      "scope": "required",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://pypi.org/project/pydantic/2.5.0/"
+        }
+      ],
+      "vulnerabilities": [
+        {
+          "id": "PYSEC-2023-12345",
+          "source": {
+            "name": "osv"
+          },
+          "severity": "low",
+          "description": "Data validation issue"
+        }
+      ]
+    }
+  ]
+}

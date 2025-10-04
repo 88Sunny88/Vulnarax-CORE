@@ -51,6 +51,18 @@ class SBOMRequest(BaseModel):
     image_name: str
     vulnerabilities: List[Dict[str, Any]]
 
+class SBOMGenerationRequest(BaseModel):
+    project_path: str
+    project_name: str
+    ecosystem: str
+    format: Optional[str] = "spdx"  # spdx or cyclonedx
+
+class SBOMFromPackagesRequest(BaseModel):
+    packages: List[Dict[str, Any]]
+    project_name: str
+    ecosystem: str
+    format: Optional[str] = "spdx"
+
 class ScanResponse(BaseModel):
     image: str
     vulnerabilities: List[Dict[str, Any]]
@@ -69,6 +81,14 @@ class SBOMResponse(BaseModel):
     sbom_path: str
     image_name: str
     generated_at: str
+
+class SBOMGenerationResponse(BaseModel):
+    sbom: Dict[str, Any]
+    format: str
+    project_name: str
+    generated_at: str
+    package_count: int
+    vulnerability_count: int
 
 class HealthResponse(BaseModel):
     status: str
@@ -431,6 +451,120 @@ async def get_metrics_summary():
     
     return metrics_instance.get_summary_stats()
 
+# SBOM Generation Endpoints
+@app.post("/sbom/generate", response_model=SBOMGenerationResponse)
+async def generate_sbom_from_scan(request: SBOMGenerationRequest):
+    """Generate enhanced SBOM from project scan"""
+    metrics_instance = get_metrics()
+    start_time = time.time()
+    
+    try:
+        from vulnaraX.sbom_generator import generate_enhanced_sbom
+        from vulnaraX.scanner import VulnerabilityScanner
+        
+        logger.info(f"Generating SBOM for {request.ecosystem} project: {request.project_name}")
+        
+        # Initialize scanner
+        scanner = VulnerabilityScanner()
+        
+        # First scan the project to get packages and vulnerabilities
+        packages = []
+        if request.ecosystem.lower() == 'java':
+            from vulnaraX.parsers.java_parser import JavaParser
+            
+            parser = JavaParser()
+            packages = parser.extract_java_dependencies_from_directory(request.project_path)
+            
+            # Scan for vulnerabilities
+            scan_result = await scanner.scan_packages_async(packages)
+            packages = scan_result
+            
+        elif request.ecosystem.lower() == 'go':
+            from vulnaraX.parsers.go_parser import GoParser
+            
+            parser = GoParser()
+            packages = parser.extract_go_dependencies_from_directory(request.project_path)
+            
+            # Scan for vulnerabilities  
+            scan_result = await scanner.scan_packages_async(packages)
+            packages = scan_result
+            
+        elif request.ecosystem.lower() == 'python':
+            from vulnaraX.parsers.pip_parser import PipParser
+            
+            parser = PipParser()
+            packages = parser.parse_requirements(request.project_path)
+            
+            # Scan for vulnerabilities
+            scan_result = await scanner.scan_packages_async(packages)
+            packages = scan_result
+        
+        # Generate enhanced SBOM
+        sbom = generate_enhanced_sbom(
+            packages=packages,
+            ecosystem=request.ecosystem,
+            project_name=request.project_name,
+            format=request.format,
+            project_path=request.project_path
+        )
+        
+        # Count vulnerabilities
+        vulnerability_count = sum(len(pkg.get('vulnerabilities', [])) for pkg in packages)
+        
+        metrics_instance.record_scan_duration(time.time() - start_time)
+        
+        return SBOMGenerationResponse(
+            sbom=sbom,
+            format=request.format,
+            project_name=request.project_name,
+            generated_at=datetime.now().isoformat(),
+            package_count=len(packages),
+            vulnerability_count=vulnerability_count
+        )
+        
+    except Exception as e:
+        logger.error(f"SBOM generation failed: {str(e)}")
+        metrics_instance.increment_errors("sbom_generation", "sbom")
+        raise HTTPException(status_code=500, detail=f"SBOM generation failed: {str(e)}")
+
+@app.post("/sbom/from-packages", response_model=SBOMGenerationResponse)
+async def generate_sbom_from_packages(request: SBOMFromPackagesRequest):
+    """Generate enhanced SBOM from package list"""
+    metrics_instance = get_metrics()
+    start_time = time.time()
+    
+    try:
+        from vulnaraX.sbom_generator import generate_enhanced_sbom
+        
+        logger.info(f"Generating SBOM from {len(request.packages)} packages for project: {request.project_name}")
+        
+        # Generate enhanced SBOM
+        sbom = generate_enhanced_sbom(
+            packages=request.packages,
+            ecosystem=request.ecosystem,
+            project_name=request.project_name,
+            format=request.format
+        )
+        
+        # Count vulnerabilities
+        vulnerability_count = sum(len(pkg.get('vulnerabilities', [])) for pkg in request.packages)
+        
+        metrics_instance.record_scan_duration(time.time() - start_time)
+        
+        return SBOMGenerationResponse(
+            sbom=sbom,
+            format=request.format,
+            project_name=request.project_name,
+            generated_at=datetime.now().isoformat(),
+            package_count=len(request.packages),
+            vulnerability_count=vulnerability_count
+        )
+        
+    except Exception as e:
+        logger.error(f"SBOM generation from packages failed: {str(e)}")
+        metrics_instance.increment_errors("sbom_generation", "sbom")
+        raise HTTPException(status_code=500, detail=f"SBOM generation failed: {str(e)}")
+
 @app.get("/")
 def root():
     """Root endpoint with API information"""
@@ -443,7 +577,9 @@ def root():
             "scan_packages": "POST /scan/packages - Async package scanning",
             "scan_java": "POST /scan/java - Java project scanning",
             "scan_go": "POST /scan/go - Go project scanning",
-            "sbom": "POST /sbom - Generate SBOM",
+            "sbom_generate": "POST /sbom/generate - Generate SBOM from project",
+            "sbom_from_packages": "POST /sbom/from-packages - Generate SBOM from packages",
+            "sbom": "POST /sbom - Generate SBOM (legacy)",
             "health": "GET /health - Health check",
             "cache_stats": "GET /cache/stats - Cache statistics",
             "cache_cleanup": "POST /cache/cleanup - Cache cleanup",
@@ -452,33 +588,14 @@ def root():
             "metrics_summary": "GET /metrics/summary - Metrics summary"
         },
         "features": [
-            "Docker image vulnerability scanning",
-            "Java ecosystem support (Maven/Gradle)",
-            "Go modules support (go.mod/go.sum)",
-            "Persistent SQLite caching",
-            "Rate limiting & async processing",
-            "Prometheus metrics",
-            "SBOM generation"
+            "Multi-ecosystem vulnerability scanning (Docker, Java, Go, Python)",
+            "Enhanced SBOM generation (SPDX & CycloneDX)",
+            "License detection and compliance",
+            "Dependency relationship mapping",
+            "Persistent SQLite caching with metrics",
+            "Prometheus monitoring",
+            "Supply chain security analysis"
         ]
-    }
-
-@app.get("/")
-async def root():
-    """Root endpoint with service information"""
-    return {
-        "service": "VulnaraX Core API",
-        "version": "1.0.0",
-        "endpoints": {
-            "scan": "POST /scan (async production endpoint)",
-            "scan-sync": "POST /scan-sync (sync compatibility endpoint)",
-            "sbom": "POST /sbom", 
-            "health": "GET /health"
-        },
-        "production_features": {
-            "async_scanning": True,
-            "rate_limiting": True,
-            "concurrent_support": "30-40 simultaneous scans"
-        }
     }
 
 if __name__ == "__main__":

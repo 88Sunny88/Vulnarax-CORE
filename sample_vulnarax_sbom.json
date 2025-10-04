@@ -1,0 +1,70 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT-14bf779f",
+  "name": "vulnarax-core-SBOM",
+  "documentNamespace": "https://vulnarax.io/sbom/vulnarax-core-0faf74e8-5a06-481a-a595-f56284d47b79",
+  "creationInfo": {
+    "created": "2025-10-04T09:45:47.248086+00:00",
+    "creators": [
+      "Tool: VulnaraX-Core-1.0.0"
+    ],
+    "licenseListVersion": "3.21"
+  },
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-Root",
+      "name": "vulnarax-core",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-1",
+      "name": "fastapi",
+      "versionInfo": "0.104.1",
+      "downloadLocation": "https://pypi.org/project/fastapi/0.104.1/",
+      "filesAnalyzed": false,
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE_MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/fastapi@0.104.1"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "supplier": "Person: Sebastian Ramirez"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-2",
+      "name": "pydantic",
+      "versionInfo": "2.5.0",
+      "downloadLocation": "https://pypi.org/project/pydantic/2.5.0/",
+      "filesAnalyzed": false,
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE_MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/pydantic@2.5.0"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION"
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-Package-Root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-1"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-Root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-2"
+    }
+  ]
+}
