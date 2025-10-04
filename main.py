@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import logging
@@ -7,9 +8,11 @@ import json
 import os
 import tempfile
 from datetime import datetime
+import time
 
 # Import cache system
 from vulnaraX.cache import get_cache, VulnerabilityCache
+from vulnaraX.metrics import get_metrics
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,6 +40,12 @@ class ScanRequest(BaseModel):
 
 class PackageScanRequest(BaseModel):
     packages: List[Dict[str, str]]
+
+class JavaProjectScanRequest(BaseModel):
+    project_path: str
+
+class GoProjectScanRequest(BaseModel):
+    project_path: str
 
 class SBOMRequest(BaseModel):
     image_name: str
@@ -75,36 +84,64 @@ class CacheStatsResponse(BaseModel):
 @app.post("/scan", response_model=ScanResponse)
 async def scan_endpoint(request: ScanRequest):
     """Async scan endpoint for production use"""
+    metrics_instance = get_metrics()
+    start_time = time.time()
+    
+    # Increment active scans
+    metrics_instance.set_active_scans(metrics_instance.active_scans + 1)
+    
     try:
         # Import here to avoid circular imports
         from vulnaraX.scanner import scan_image_async
         
         logger.info(f"Starting async scan for image: {request.image_name}")
+        metrics_instance.increment_scan_requests("docker_image", "started")
         
         scan_results = await scan_image_async(request.image_name)
         
         if not scan_results:
+            metrics_instance.increment_errors("scan_failed", "scanner")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Scan failed to produce results"
             )
         
+        # Record vulnerabilities found
+        vulnerabilities = scan_results.get("vulnerabilities", [])
+        for vuln in vulnerabilities:
+            ecosystem = vuln.get("_ecosystem", "unknown")
+            severity = vuln.get("severity", "unknown")
+            metrics_instance.increment_vulnerabilities_found(ecosystem, severity)
+        
         response = ScanResponse(
             image=scan_results.get("image", request.image_name),
-            vulnerabilities=scan_results.get("vulnerabilities", []),
+            vulnerabilities=vulnerabilities,
             scan_timestamp=scan_results.get("scan_timestamp", datetime.now().isoformat()),
             vulnerability_count=scan_results.get("vulnerability_count", 0)
         )
+        
+        # Record successful scan
+        scan_duration = time.time() - start_time
+        metrics_instance.record_scan_duration(scan_duration, "docker_image")
+        metrics_instance.increment_scan_requests("docker_image", "success")
         
         logger.info(f"Scan completed for {request.image_name}. Found {response.vulnerability_count} vulnerabilities")
         return response
         
     except Exception as e:
+        scan_duration = time.time() - start_time
+        metrics_instance.record_scan_duration(scan_duration, "docker_image")
+        metrics_instance.increment_scan_requests("docker_image", "error")
+        metrics_instance.increment_errors("exception", "scan_endpoint")
+        
         logger.error(f"Scan failed for {request.image_name}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Scan failed: {str(e)}"
         )
+    finally:
+        # Decrement active scans
+        metrics_instance.set_active_scans(max(0, metrics_instance.active_scans - 1))
 
 @app.post("/scan-sync", response_model=ScanResponse)
 async def scan_sync_endpoint(request: ScanRequest):
@@ -198,6 +235,112 @@ async def scan_packages_sync_endpoint(request: PackageScanRequest):
             detail=f"Sync package scan failed: {str(e)}"
         )
 
+@app.post("/scan/java", response_model=PackageScanResponse)
+async def scan_java_project_endpoint(request: JavaProjectScanRequest):
+    """Scan Java project (Maven/Gradle) for vulnerabilities"""
+    try:
+        from vulnaraX.parsers.java_parser import parse_java_dependencies
+        from vulnaraX.scanner import VulnerabilityScanner
+        
+        logger.info(f"Starting Java project scan for: {request.project_path}")
+        
+        # Extract Java dependencies
+        java_packages = parse_java_dependencies(request.project_path)
+        
+        if not java_packages:
+            return PackageScanResponse(
+                packages=[],
+                vulnerabilities=[],
+                scan_timestamp=datetime.now().isoformat(),
+                vulnerability_count=0,
+                package_count=0
+            )
+        
+        # Clean package data for API response (remove non-standard fields)
+        clean_packages = []
+        for pkg in java_packages:
+            clean_pkg = {
+                'name': pkg['name'],
+                'version': pkg['version'],
+                'ecosystem': pkg['ecosystem']
+            }
+            clean_packages.append(clean_pkg)
+        
+        # Scan for vulnerabilities
+        scanner = VulnerabilityScanner(rate_limit_delay=0.5, max_concurrent=5)
+        vulnerabilities = await scanner.scan_packages_async(java_packages)
+        
+        response = PackageScanResponse(
+            packages=clean_packages,
+            vulnerabilities=vulnerabilities,
+            scan_timestamp=datetime.now().isoformat(),
+            vulnerability_count=len(vulnerabilities),
+            package_count=len(java_packages)
+        )
+        
+        logger.info(f"Java project scan completed. Found {response.vulnerability_count} vulnerabilities across {response.package_count} Java packages")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Java project scan failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Java project scan failed: {str(e)}"
+        )
+
+@app.post("/scan/go", response_model=PackageScanResponse)
+async def scan_go_project_endpoint(request: GoProjectScanRequest):
+    """Scan Go project (go.mod/go.sum) for vulnerabilities"""
+    try:
+        from vulnaraX.parsers.go_parser import parse_go_dependencies
+        from vulnaraX.scanner import VulnerabilityScanner
+        
+        logger.info(f"Starting Go project scan for: {request.project_path}")
+        
+        # Extract Go dependencies
+        go_packages = parse_go_dependencies(request.project_path)
+        
+        if not go_packages:
+            return PackageScanResponse(
+                packages=[],
+                vulnerabilities=[],
+                scan_timestamp=datetime.now().isoformat(),
+                vulnerability_count=0,
+                package_count=0
+            )
+        
+        # Clean package data for API response (remove non-string fields)
+        clean_packages = []
+        for pkg in go_packages:
+            clean_pkg = {
+                'name': pkg['name'],
+                'version': pkg['version'],
+                'ecosystem': pkg['ecosystem']
+            }
+            clean_packages.append(clean_pkg)
+        
+        # Scan for vulnerabilities
+        scanner = VulnerabilityScanner(rate_limit_delay=0.5, max_concurrent=5)
+        vulnerabilities = await scanner.scan_packages_async(go_packages)
+        
+        response = PackageScanResponse(
+            packages=clean_packages,
+            vulnerabilities=vulnerabilities,
+            scan_timestamp=datetime.now().isoformat(),
+            vulnerability_count=len(vulnerabilities),
+            package_count=len(go_packages)
+        )
+        
+        logger.info(f"Go project scan completed. Found {response.vulnerability_count} vulnerabilities across {response.package_count} Go packages")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Go project scan failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Go project scan failed: {str(e)}"
+        )
+
 @app.post("/sbom", response_model=SBOMResponse)
 async def sbom_endpoint(request: SBOMRequest):
     """Generate SBOM for a scanned image"""
@@ -263,6 +406,61 @@ async def clear_cache():
     cache = VulnerabilityCache()
     cleared = cache.clear_all()
     return {"cleared_entries": cleared, "message": f"Cleared {cleared} cache entries"}
+
+@app.get("/metrics", response_class=PlainTextResponse)
+async def get_prometheus_metrics():
+    """Prometheus metrics endpoint"""
+    metrics_instance = get_metrics()
+    
+    # Update cache size metric
+    cache = VulnerabilityCache()
+    stats = cache.get_cache_stats()
+    metrics_instance.set_cache_size(stats.get("total_entries", 0))
+    
+    return metrics_instance.get_metrics_text()
+
+@app.get("/metrics/summary")
+async def get_metrics_summary():
+    """Human-readable metrics summary"""
+    metrics_instance = get_metrics()
+    
+    # Update cache metrics
+    cache = VulnerabilityCache()
+    stats = cache.get_cache_stats()
+    metrics_instance.set_cache_size(stats.get("total_entries", 0))
+    
+    return metrics_instance.get_summary_stats()
+
+@app.get("/")
+def root():
+    """Root endpoint with API information"""
+    return {
+        "service": "VulnaraX Vulnerability Scanner",
+        "version": "2.0.0",
+        "endpoints": {
+            "scan": "POST /scan - Async Docker image scanning",
+            "scan_sync": "POST /scan-sync - Sync Docker image scanning",
+            "scan_packages": "POST /scan/packages - Async package scanning",
+            "scan_java": "POST /scan/java - Java project scanning",
+            "scan_go": "POST /scan/go - Go project scanning",
+            "sbom": "POST /sbom - Generate SBOM",
+            "health": "GET /health - Health check",
+            "cache_stats": "GET /cache/stats - Cache statistics",
+            "cache_cleanup": "POST /cache/cleanup - Cache cleanup",
+            "cache_clear": "DELETE /cache/clear - Clear cache",
+            "metrics": "GET /metrics - Prometheus metrics",
+            "metrics_summary": "GET /metrics/summary - Metrics summary"
+        },
+        "features": [
+            "Docker image vulnerability scanning",
+            "Java ecosystem support (Maven/Gradle)",
+            "Go modules support (go.mod/go.sum)",
+            "Persistent SQLite caching",
+            "Rate limiting & async processing",
+            "Prometheus metrics",
+            "SBOM generation"
+        ]
+    }
 
 @app.get("/")
 async def root():

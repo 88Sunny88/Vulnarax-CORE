@@ -17,6 +17,8 @@ from cyclonedx.output.json import JsonV1Dot5
 # Import vulnerability sources
 from .sources.osv_client import query_osv_async, query_osv
 from .sources.nvd_client import nvd_client, query_nvd
+from .parsers.java_parser import parse_java_dependencies
+from .parsers.go_parser import parse_go_dependencies
 
 from vulnaraX.sources.nvd_client import query_nvd
 
@@ -463,6 +465,22 @@ def extract_packages_from_image(image_name: str):
         except Exception as e:
             logging.warning(f"Failed to extract Node.js packages: {e}")
 
+        # Extract Java dependencies (Maven/Gradle)
+        try:
+            java_packages = parse_java_dependencies(rootfs)
+            print(f"[*] Found {len(java_packages)} Java dependencies")
+            packages.extend(java_packages)
+        except Exception as e:
+            logging.warning(f"Failed to extract Java packages: {e}")
+
+        # Extract Go dependencies (go.mod/go.sum)
+        try:
+            go_packages = parse_go_dependencies(rootfs)
+            print(f"[*] Found {len(go_packages)} Go dependencies")
+            packages.extend(go_packages)
+        except Exception as e:
+            logging.warning(f"Failed to extract Go packages: {e}")
+
     except Exception as e:
         print(f"[!] Error extracting packages from {image_name}: {e}")
         return []
@@ -539,6 +557,72 @@ def extract_packages_from_image(image_name: str):
                     logging.warning(f"Failed to scan Node.js package {pkg['name']}: {e}")
         except Exception as e:
             logging.warning(f"Failed to extract Node.js packages: {e}")
+
+        # Extract and scan Java dependencies
+        try:
+            java_packages = parse_java_dependencies(rootfs)
+            print(f"[*] Found {len(java_packages)} Java dependencies")
+            
+            for pkg in java_packages:
+                try:
+                    # Use Maven ecosystem for Java packages
+                    vulns = query_osv(pkg["name"], pkg.get("version", ""))
+                    for v in vulns:
+                        vulnerabilities.append({
+                            "id": v.get("id"),
+                            "package": pkg["name"],
+                            "version": pkg["version"],
+                            "_ecosystem": "Maven",
+                            "severity": _normalize_severity(v),
+                            "fixed_version": v.get("fixed_version"),
+                            "instructions": f"Update {pkg['group_id']}:{pkg['artifact_id']} to version {v.get('fixed_version', 'latest')}"
+                        })
+                    
+                    # Also try NVD for Java packages
+                    nvd_vulns = query_nvd(pkg["name"], pkg.get("version", ""))
+                    for v in nvd_vulns:
+                        vulnerabilities.append({
+                            "id": v.get("id"),
+                            "package": pkg["name"],
+                            "version": pkg["version"],
+                            "_ecosystem": "Maven",
+                            "severity": v.get("severity", "UNKNOWN"),
+                            "fixed_version": v.get("fixed_version"),
+                            "instructions": f"Update {pkg['group_id']}:{pkg['artifact_id']} to version {v.get('fixed_version', 'latest')}"
+                        })
+                    
+                    time.sleep(RATE_LIMIT_DELAY)  # Rate limiting
+                except Exception as e:
+                    logging.warning(f"Failed to scan Java package {pkg['name']}: {e}")
+        except Exception as e:
+            logging.warning(f"Failed to extract Java packages: {e}")
+
+        # Extract and scan Go dependencies
+        try:
+            go_packages = parse_go_dependencies(rootfs)
+            print(f"[*] Found {len(go_packages)} Go dependencies")
+            
+            for pkg in go_packages:
+                try:
+                    # Use Go ecosystem for Go packages  
+                    vulns = query_osv(pkg["name"], pkg.get("version", ""))
+                    for v in vulns:
+                        vulnerabilities.append({
+                            "id": v.get("id"),
+                            "package": pkg["name"],
+                            "version": pkg["version"],
+                            "_ecosystem": "Go",
+                            "severity": _normalize_severity(v),
+                            "fixed_version": v.get("fixed_version"),
+                            "instructions": f"Update Go module {pkg['name']} to version {v.get('fixed_version', 'latest')}",
+                            "indirect": pkg.get("indirect", False)
+                        })
+                    
+                    time.sleep(RATE_LIMIT_DELAY)  # Rate limiting
+                except Exception as e:
+                    logging.warning(f"Failed to scan Go package {pkg['name']}: {e}")
+        except Exception as e:
+            logging.warning(f"Failed to extract Go packages: {e}")
 
         # Process system packages in batches
         print(f"[*] Processing {len(pkgs)} system packages in batches of {BATCH_SIZE}")

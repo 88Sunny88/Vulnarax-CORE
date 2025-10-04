@@ -7,8 +7,15 @@ from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 import threading
 
+# Import metrics for tracking
+try:
+    from .metrics import get_metrics
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+
 class VulnerabilityCache:
-    """Persistent caching system for vulnerability data"""
+    """SQLite-based persistent cache for vulnerability data"""
     
     def __init__(self, db_path: str = "vulnerabilities.db", ttl_hours: int = 24):
         self.db_path = db_path
@@ -66,19 +73,38 @@ class VulnerabilityCache:
                 row = cursor.fetchone()
                 if row:
                     try:
+                        # Record cache hit
+                        if METRICS_AVAILABLE:
+                            metrics = get_metrics()
+                            metrics.increment_cache_operations("get", "hit")
+                        
                         return json.loads(row['vulnerabilities'])
                     except json.JSONDecodeError:
                         # Remove corrupted entry
                         cursor.execute('DELETE FROM vulnerability_cache WHERE cache_key = ?', 
                                      (cache_key,))
+                        
+                        # Record cache miss due to corruption
+                        if METRICS_AVAILABLE:
+                            metrics = get_metrics()
+                            metrics.increment_cache_operations("get", "miss")
+                            metrics.increment_errors("cache_corruption", "cache")
+                        
                         conn.commit()
+                        return None
+                
+                # Record cache miss
+                if METRICS_AVAILABLE:
+                    metrics = get_metrics()
+                    metrics.increment_cache_operations("get", "miss")
                 
                 return None
     
     def set(self, package_name: str, version: str, source: str, vulnerabilities: List[Dict]):
-        """Store vulnerability data in cache"""
+        """Store vulnerability data in cache with TTL"""
         cache_key = self._generate_cache_key(package_name, version, source)
         expires_at = datetime.now() + timedelta(hours=self.ttl_hours)
+        vulnerabilities_json = json.dumps(vulnerabilities)
         
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
@@ -89,14 +115,12 @@ class VulnerabilityCache:
                     INSERT OR REPLACE INTO vulnerability_cache 
                     (cache_key, package_name, package_version, source, vulnerabilities, expires_at)
                     VALUES (?, ?, ?, ?, ?, ?)
-                ''', (
-                    cache_key,
-                    package_name,
-                    version,
-                    source,
-                    json.dumps(vulnerabilities),
-                    expires_at
-                ))
+                ''', (cache_key, package_name, version, source, vulnerabilities_json, expires_at))
+                
+                # Record cache set operation
+                if METRICS_AVAILABLE:
+                    metrics = get_metrics()
+                    metrics.increment_cache_operations("set", "success")
                 
                 conn.commit()
     
@@ -108,6 +132,12 @@ class VulnerabilityCache:
                 cursor.execute('DELETE FROM vulnerability_cache WHERE expires_at < ?', 
                              (datetime.now(),))
                 deleted_count = cursor.rowcount
+                
+                # Record cleanup operation
+                if METRICS_AVAILABLE:
+                    metrics = get_metrics()
+                    metrics.increment_cache_operations("cleanup", "success")
+                
                 conn.commit()
                 return deleted_count
     
@@ -149,6 +179,12 @@ class VulnerabilityCache:
                 cursor = conn.cursor()
                 cursor.execute('DELETE FROM vulnerability_cache')
                 deleted_count = cursor.rowcount
+                
+                # Record clear operation
+                if METRICS_AVAILABLE:
+                    metrics = get_metrics()
+                    metrics.increment_cache_operations("clear", "success")
+                
                 conn.commit()
                 return deleted_count
 
@@ -160,6 +196,5 @@ def get_cache() -> VulnerabilityCache:
     global _cache_instance
     if _cache_instance is None:
         cache_path = os.getenv('VULNARAX_CACHE_PATH', 'vulnerabilities.db')
-        cache_ttl = int(os.getenv('VULNARAX_CACHE_TTL_HOURS', '24'))
-        _cache_instance = VulnerabilityCache(cache_path, cache_ttl)
+        _cache_instance = VulnerabilityCache(cache_path)
     return _cache_instance
