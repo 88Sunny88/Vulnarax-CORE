@@ -19,8 +19,13 @@ class PrometheusMetrics:
         self.scan_requests_total = Counter()
         self.vulnerabilities_found_total = Counter()
         self.api_calls_total = Counter()
-        self.cache_operations_total = Counter()
-        self.errors_total = Counter()
+        self.cache_operations = Counter()
+        self.errors = Counter()
+        
+        # Webhook metrics
+        self.webhook_deliveries = Counter()
+        self.feed_checks = Counter()
+        self.alerts_generated = Counter()
         
         # Histograms (simplified as buckets)
         self.scan_duration_buckets = defaultdict(int)
@@ -77,9 +82,23 @@ class PrometheusMetrics:
     
     def increment_errors(self, error_type: str, component: str):
         """Increment error counter"""
-        with self._lock:
-            key = f"{error_type}_{component}"
-            self.errors_total[key] += 1
+        with self.lock:
+            self.errors[f"{error_type}_{component}"] += 1
+    
+    def increment_webhook_deliveries(self, status: str):
+        """Increment webhook delivery counter"""
+        with self.lock:
+            self.webhook_deliveries[status] += 1
+    
+    def increment_feed_checks(self, feed_name: str, status: str):
+        """Increment feed check counter"""
+        with self.lock:
+            self.feed_checks[f"{feed_name}_{status}"] += 1
+    
+    def increment_alerts_generated(self, alert_type: str, priority: str):
+        """Increment alerts generated counter"""
+        with self.lock:
+            self.alerts_generated[f"{alert_type}_{priority}"] += 1
     
     def record_scan_duration(self, duration_seconds: float, scan_type: str = "unknown"):
         """Record scan duration in histogram"""
@@ -203,6 +222,28 @@ class PrometheusMetrics:
                 "# TYPE vulnarax_cache_hit_ratio gauge"
             ])
             lines.append(f'vulnarax_cache_hit_ratio {self.cache_hit_ratio:.4f} {timestamp}')
+            
+            # Webhook metrics
+            lines.extend([
+                "# HELP vulnarax_webhook_deliveries_total Total webhook deliveries",
+                "# TYPE vulnarax_webhook_deliveries_total counter"
+            ])
+            for status, count in self.webhook_deliveries.items():
+                lines.append(f'vulnarax_webhook_deliveries_total{{status="{status}"}} {count} {timestamp}')
+            
+            lines.extend([
+                "# HELP vulnarax_feed_checks_total Total vulnerability feed checks", 
+                "# TYPE vulnarax_feed_checks_total counter"
+            ])
+            for feed_status, count in self.feed_checks.items():
+                lines.append(f'vulnarax_feed_checks_total{{feed_status="{feed_status}"}} {count} {timestamp}')
+            
+            lines.extend([
+                "# HELP vulnarax_alerts_generated_total Total alerts generated",
+                "# TYPE vulnarax_alerts_generated_total counter"
+            ])
+            for alert_type_priority, count in self.alerts_generated.items():
+                lines.append(f'vulnarax_alerts_generated_total{{alert_type_priority="{alert_type_priority}"}} {count} {timestamp}')
             
             return '\n'.join(lines) + '\n'
     
