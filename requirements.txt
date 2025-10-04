@@ -1,0 +1,10 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+aiofiles==23.2.1
+python-multipart==0.0.6
+aiohttp==3.9.1
+requests==2.31.0
+toml==0.10.2
+cyclonedx-python-lib==7.4.0
+docker==6.1.3
